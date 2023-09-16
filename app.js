@@ -32,6 +32,9 @@ const initializeDBAndServer = async () => {
 initializeDBAndServer();
 
 const authenticateToken = (request, response, next) => {
+  const { tweet } = request.body;
+  const { tweetId } = request.params;
+
   let jwtToken;
   const authHeader = request.headers["authorization"];
 
@@ -48,6 +51,9 @@ const authenticateToken = (request, response, next) => {
         response.status(401);
         response.send("Invalid JWT Token");
       } else {
+        request.payload = payload;
+        request.tweetId = tweetId;
+        request.tweet = tweet;
         next();
       }
     });
@@ -57,19 +63,30 @@ const authenticateToken = (request, response, next) => {
 app.post("/register/", async (request, response) => {
   const { userName, password, name, gender } = request.body;
 
-  const selectUserQuery = `SELECT * FROM user WHERE username = ${userName};`;
+  const selectUserQuery = `SELECT * FROM user WHERE username = '${userName}';`;
   const user = await db.get(selectUserQuery);
 
   if (user !== undefined) {
     response.status(400);
     response.send("User already exists");
   } else {
+    const user = await db.run(selectUserQuery);
+
     if (password.length < 6) {
       response.status(400);
       response.send("Password is too short");
     } else {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const createUserQuery = `INSERT INTO user ( name, username, password, gender )
+      VALUES (
+        '${name}',
+        '${userName}',
+        '${hashedPassword}',
+        '${gender}'
+      )
+    ;`;
       response.status(200);
-      response.send("User created succesfully");
+      response.send("User created successfully");
     }
   }
 });
@@ -96,4 +113,19 @@ app.post("/login/", async (request, response) => {
       response.send({ jwtoken });
     }
   }
+});
+
+app.get("/user/tweets/feed/", async (request, response) => {
+  const { userDetails } = request;
+  const { userId, name, username, gender } = userDetails;
+
+  const getTweetFeedQuery = `SELECT username, tweet, date_time 
+     FROM follower INNER JOIN tweet ON follower.following_user_id = tweet.user_id
+     INNER JOIN user ON user.user_id = follower.following_user_id
+     WHERE username = ${userName}
+     ORDER BY date_time DESC
+     LIMIT 4;`;
+
+  const tweetFeed = await db.all(getTweetFeedQuery);
+  response.send(tweetFeedQ);
 });
